@@ -1,0 +1,101 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: weatherservice
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: weatherservice
+  name: weatherservice-deployment
+  labels:
+    app: weatherservice
+spec:
+  selector:
+    matchLabels:
+      app: weatherservice
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: weatherservice
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64    
+      containers:
+      - image: 536297633110.dkr.ecr.us-east-1.amazonaws.com/weatherservice:latest
+        imagePullPolicy: Always
+        name: weatherservice
+        ports:
+        - containerPort: 80
+      nodeSelector:
+        kubernetes.io/os: linux    
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: weatherservice
+  name: weatherservice-service
+  labels:
+    app: weatherservice
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+  ##type: LoadBalancer
+  type: NodePort     
+  selector:
+    app: weatherservice
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: weatherservice
+  name: weatherservice-alb-ingress
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: instance
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: weatherservice-service
+              port:
+                number: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: weatherservice
+  name: weatherservice-nlb-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - port: 80
+      targetPort: 80
+      #protocol: TCP
+  type: LoadBalancer    
+  selector:
+    app: weatherservice
+---
